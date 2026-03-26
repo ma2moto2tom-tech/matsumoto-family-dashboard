@@ -91,14 +91,14 @@ export default function QuickMemo() {
   return (
     <div className="card">
       <div className="flex items-center justify-between mb-3">
-        <h2 className="text-[15px] font-semibold text-[#1d1d1f]">メモ</h2>
+        <h2 className="text-[15px] font-semibold text-[--fg]">メモ</h2>
       </div>
 
       {/* Date navigation */}
-      <div className="flex items-center justify-between mb-3 bg-[#f5f5f7] rounded-xl px-2 py-1.5">
+      <div className="flex items-center justify-between mb-3 bg-[--bg2] rounded-xl px-2 py-1.5">
         <button
           onClick={() => setSelectedDate(shiftDate(selectedDate, -1))}
-          className="w-7 h-7 flex items-center justify-center text-[#86868b] hover:text-[#1d1d1f] transition-colors rounded-lg hover:bg-white"
+          className="w-7 h-7 flex items-center justify-center text-[--fg2] hover:text-[--fg] transition-colors rounded-lg hover:bg-[--card]"
         >
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
             <path d="M10 4L6 8L10 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
@@ -107,7 +107,7 @@ export default function QuickMemo() {
         <button
           onClick={() => setSelectedDate(todayKey)}
           className={`text-[13px] font-medium px-3 py-1 rounded-lg transition-colors ${
-            isToday ? 'text-[#007AFF]' : 'text-[#1d1d1f] hover:bg-white'
+            isToday ? 'text-[#007AFF]' : 'text-[--fg] hover:bg-[--card]'
           }`}
         >
           {isToday ? '今日' : formatDateLabel(selectedDate)}
@@ -115,7 +115,7 @@ export default function QuickMemo() {
         <button
           onClick={() => setSelectedDate(shiftDate(selectedDate, 1))}
           disabled={selectedDate >= todayKey}
-          className="w-7 h-7 flex items-center justify-center text-[#86868b] hover:text-[#1d1d1f] transition-colors rounded-lg hover:bg-white disabled:opacity-30"
+          className="w-7 h-7 flex items-center justify-center text-[--fg2] hover:text-[--fg] transition-colors rounded-lg hover:bg-[--card] disabled:opacity-30"
         >
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
             <path d="M6 4L10 8L6 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
@@ -130,7 +130,7 @@ export default function QuickMemo() {
           onChange={e => setInput(e.target.value)}
           placeholder="思ったことを記録..."
           rows={3}
-          className="w-full px-3 py-2.5 text-[14px] bg-[#f5f5f7] rounded-xl border-none outline-none placeholder:text-[#c7c7cc] focus:ring-2 focus:ring-[#007AFF]/20 transition-all resize-none leading-relaxed"
+          className="w-full px-3 py-2.5 text-[14px] bg-[--bg2] rounded-xl border-none outline-none placeholder:text-[--fg3] focus:ring-2 focus:ring-[#007AFF]/20 transition-all resize-none leading-relaxed"
         />
         <div className="flex justify-end mt-1.5">
           <button
@@ -146,20 +146,20 @@ export default function QuickMemo() {
       {/* Memos for selected date */}
       <div className="space-y-1 max-h-[200px] overflow-y-auto">
         {memos.length === 0 && (
-          <p className="text-[13px] text-[#c7c7cc] py-4 text-center">メモなし</p>
+          <p className="text-[13px] text-[--fg3] py-4 text-center">メモなし</p>
         )}
         {memos.map(memo => (
           <div
             key={memo.id}
-            className="flex items-start gap-2 px-2 py-1.5 rounded-lg group hover:bg-[#f5f5f7] transition-colors"
+            className="flex items-start gap-2 px-2 py-1.5 rounded-lg group hover:bg-[--bg2] transition-colors"
           >
-            <span className="text-[11px] text-[#c7c7cc] mt-0.5 flex-shrink-0 tabular-nums">
+            <span className="text-[11px] text-[--fg3] mt-0.5 flex-shrink-0 tabular-nums">
               {formatTime(memo.timestamp)}
             </span>
-            <p className="text-[14px] text-[#1d1d1f] flex-1 leading-snug">{memo.text}</p>
+            <p className="text-[14px] text-[--fg] flex-1 leading-snug">{memo.text}</p>
             <button
               onClick={() => deleteMemo(memo.id)}
-              className="opacity-0 group-hover:opacity-100 text-[#c7c7cc] hover:text-[#FF3B30] transition-all flex-shrink-0 mt-0.5"
+              className="opacity-0 group-hover:opacity-100 text-[--fg3] hover:text-[#FF3B30] transition-all flex-shrink-0 mt-0.5"
             >
               <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
                 <path d="M4 4L12 12M12 4L4 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
@@ -171,13 +171,13 @@ export default function QuickMemo() {
 
       {/* Jump to dates with memos */}
       {memoDates.length > 1 && (
-        <div className="border-t border-[#e5e5ea] pt-2 mt-3">
+        <div className="border-t border-[--border] pt-2 mt-3">
           <div className="flex gap-1.5 flex-wrap">
             {memoDates.filter(d => d !== selectedDate).slice(0, 7).map(d => (
               <button
                 key={d}
                 onClick={() => setSelectedDate(d)}
-                className="text-[11px] text-[#86868b] hover:text-[#007AFF] px-2 py-1 rounded-lg hover:bg-[#f5f5f7] transition-colors tabular-nums"
+                className="text-[11px] text-[--fg2] hover:text-[#007AFF] px-2 py-1 rounded-lg hover:bg-[--bg2] transition-colors tabular-nums"
               >
                 {formatDateLabel(d).split('（')[0]}
               </button>

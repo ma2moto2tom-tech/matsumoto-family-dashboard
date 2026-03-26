@@ -89,13 +89,13 @@ export default function HealthTracker() {
   // Get sorted dates that have entries
   const entryDates = Object.keys(data).sort().reverse();
 
-  const inputClass = "w-full px-3 py-2 text-[14px] bg-[#f5f5f7] rounded-xl border-none outline-none placeholder:text-[#c7c7cc] focus:ring-2 focus:ring-[#007AFF]/20 transition-all tabular-nums";
+  const inputClass = "w-full px-3 py-2 text-[14px] bg-[--bg2] rounded-xl border-none outline-none placeholder:text-[--fg3] focus:ring-2 focus:ring-[#007AFF]/20 transition-all tabular-nums";
 
   return (
     <div className="card">
       {/* Header with date nav */}
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-[15px] font-semibold text-[#1d1d1f]">ヘルスログ</h2>
+        <h2 className="text-[15px] font-semibold text-[--fg]">ヘルスログ</h2>
         <button
           onClick={save}
           className={`text-[13px] font-medium transition-all ${
@@ -107,10 +107,10 @@ export default function HealthTracker() {
       </div>
 
       {/* Date navigation */}
-      <div className="flex items-center justify-between mb-4 bg-[#f5f5f7] rounded-xl px-2 py-1.5">
+      <div className="flex items-center justify-between mb-4 bg-[--bg2] rounded-xl px-2 py-1.5">
         <button
           onClick={() => setSelectedDate(shiftDate(selectedDate, -1))}
-          className="w-7 h-7 flex items-center justify-center text-[#86868b] hover:text-[#1d1d1f] transition-colors rounded-lg hover:bg-white"
+          className="w-7 h-7 flex items-center justify-center text-[--fg2] hover:text-[--fg] transition-colors rounded-lg hover:bg-[--card]"
         >
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
             <path d="M10 4L6 8L10 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
@@ -119,7 +119,7 @@ export default function HealthTracker() {
         <button
           onClick={() => setSelectedDate(todayKey)}
           className={`text-[13px] font-medium px-3 py-1 rounded-lg transition-colors ${
-            isToday ? 'text-[#007AFF]' : 'text-[#1d1d1f] hover:bg-white'
+            isToday ? 'text-[#007AFF]' : 'text-[--fg] hover:bg-[--card]'
           }`}
         >
           {isToday ? '今日' : formatDateLabel(selectedDate)}
@@ -127,7 +127,7 @@ export default function HealthTracker() {
         {!isToday && (
           <button
             onClick={() => setSelectedDate(todayKey)}
-            className="text-[12px] text-[#007AFF] font-medium px-2 py-0.5 rounded-md hover:bg-white transition-colors"
+            className="text-[12px] text-[#007AFF] font-medium px-2 py-0.5 rounded-md hover:bg-[--card] transition-colors"
           >
             今日
           </button>
@@ -138,7 +138,7 @@ export default function HealthTracker() {
             if (next <= todayKey) setSelectedDate(next);
           }}
           disabled={isToday}
-          className="w-7 h-7 flex items-center justify-center text-[#86868b] hover:text-[#1d1d1f] transition-colors rounded-lg hover:bg-white disabled:opacity-30"
+          className="w-7 h-7 flex items-center justify-center text-[--fg2] hover:text-[--fg] transition-colors rounded-lg hover:bg-[--card] disabled:opacity-30"
         >
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
             <path d="M6 4L10 8L6 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
@@ -149,28 +149,28 @@ export default function HealthTracker() {
       {/* Form */}
       <div className="grid grid-cols-2 gap-3 mb-3">
         <div>
-          <label className="text-[11px] text-[#86868b] mb-1 block">体重 (kg)</label>
+          <label className="text-[11px] text-[--fg2] mb-1 block">体重 (kg)</label>
           <input type="number" step="0.1" placeholder="75.0" className={inputClass}
             value={weight} onChange={e => setWeight(e.target.value)} />
         </div>
         <div>
-          <label className="text-[11px] text-[#86868b] mb-1 block">血圧</label>
+          <label className="text-[11px] text-[--fg2] mb-1 block">血圧</label>
           <div className="flex gap-1.5 items-center">
             <input type="number" placeholder="120" className={`${inputClass} text-center`}
               value={bpSystolic} onChange={e => setBpSystolic(e.target.value)} />
-            <span className="text-[#c7c7cc] text-[14px]">/</span>
+            <span className="text-[--fg3] text-[14px]">/</span>
             <input type="number" placeholder="80" className={`${inputClass} text-center`}
               value={bpDiastolic} onChange={e => setBpDiastolic(e.target.value)} />
           </div>
         </div>
       </div>
       <div className="mb-3">
-        <label className="text-[11px] text-[#86868b] mb-1 block">お酒</label>
+        <label className="text-[11px] text-[--fg2] mb-1 block">お酒</label>
         <input type="text" placeholder="ビール350ml x 2" className={inputClass}
           value={alcohol} onChange={e => setAlcohol(e.target.value)} />
       </div>
       <div className="mb-4">
-        <label className="text-[11px] text-[#86868b] mb-1 block">一言日記</label>
+        <label className="text-[11px] text-[--fg2] mb-1 block">一言日記</label>
         <input type="text" placeholder="今日感じたこと..." className={inputClass}
           value={diary} onChange={e => setDiary(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter') save(); }} />
@@ -178,8 +178,8 @@ export default function HealthTracker() {
 
       {/* Past entries */}
       {entryDates.length > 0 && (
-        <div className="border-t border-[#e5e5ea] pt-3">
-          <p className="text-[11px] text-[#86868b] mb-2">過去の記録</p>
+        <div className="border-t border-[--border] pt-3">
+          <p className="text-[11px] text-[--fg2] mb-2">過去の記録</p>
           <div className="space-y-2 max-h-[140px] overflow-y-auto">
             {entryDates.filter(d => d !== selectedDate).slice(0, 14).map(date => {
               const e = data[date];
@@ -187,18 +187,18 @@ export default function HealthTracker() {
                 <button
                   key={date}
                   onClick={() => setSelectedDate(date)}
-                  className="flex items-baseline gap-3 text-[12px] w-full text-left hover:bg-[#f5f5f7] rounded-lg px-2 py-1.5 transition-colors"
+                  className="flex items-baseline gap-3 text-[12px] w-full text-left hover:bg-[--bg2] rounded-lg px-2 py-1.5 transition-colors"
                 >
-                  <span className="text-[#86868b] tabular-nums flex-shrink-0 w-[48px]">
+                  <span className="text-[--fg2] tabular-nums flex-shrink-0 w-[48px]">
                     {formatDateLabel(date).split('（')[0]}
                   </span>
-                  <div className="flex gap-3 flex-wrap text-[#1d1d1f]">
+                  <div className="flex gap-3 flex-wrap text-[--fg]">
                     {e.weight && <span>{e.weight}kg</span>}
                     {e.bpSystolic && <span>{e.bpSystolic}/{e.bpDiastolic}</span>}
                     {e.alcohol && <span>{e.alcohol}</span>}
                   </div>
                   {e.diary && (
-                    <span className="text-[#86868b] truncate flex-1">{e.diary}</span>
+                    <span className="text-[--fg2] truncate flex-1">{e.diary}</span>
                   )}
                 </button>
               );

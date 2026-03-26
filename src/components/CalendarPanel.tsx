@@ -8,15 +8,36 @@ interface ScheduleItem {
   status: string;
 }
 
+function dateKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function shiftDate(key: string, days: number): string {
+  const d = new Date(key + 'T00:00:00');
+  d.setDate(d.getDate() + days);
+  return dateKey(d);
+}
+
+function formatDateLabel(key: string): string {
+  const [, m, d] = key.split('-');
+  const date = new Date(key + 'T00:00:00');
+  const weekdays = ['日', '月', '火', '水', '木', '金', '土'];
+  return `${parseInt(m)}/${parseInt(d)}（${weekdays[date.getDay()]}）`;
+}
+
 export default function CalendarPanel() {
+  const todayKey = dateKey(new Date());
+  const [selectedDate, setSelectedDate] = useState(todayKey);
   const [schedule, setSchedule] = useState<ScheduleItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<string>('');
 
-  const fetchEvents = useCallback(async () => {
+  const isToday = selectedDate === todayKey;
+
+  const fetchEvents = useCallback(async (date: string) => {
+    setLoading(true);
     try {
-      const res = await fetch('/api/calendar-events');
+      const res = await fetch(`/api/calendar-events?date=${date}`);
       if (!res.ok) {
         const data = await res.json();
         throw new Error(data.error || `HTTP ${res.status}`);
@@ -24,8 +45,6 @@ export default function CalendarPanel() {
       const data = await res.json();
       setSchedule(data.schedule || []);
       setError(null);
-      const now = new Date();
-      setLastUpdated(`${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')}`);
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -34,64 +53,82 @@ export default function CalendarPanel() {
   }, []);
 
   useEffect(() => {
-    fetchEvents();
-    // Auto-refresh every 60 seconds
-    const interval = setInterval(fetchEvents, 60000);
+    fetchEvents(selectedDate);
+  }, [selectedDate, fetchEvents]);
+
+  // Auto-refresh every 60s if viewing today
+  useEffect(() => {
+    if (!isToday) return;
+    const interval = setInterval(() => fetchEvents(selectedDate), 60000);
     return () => clearInterval(interval);
-  }, [fetchEvents]);
+  }, [isToday, selectedDate, fetchEvents]);
 
   const now = new Date();
   const currentMinutes = now.getHours() * 60 + now.getMinutes();
 
-  function parseStartMinutes(time: string): number {
-    const match = time.match(/^(\d{1,2}):(\d{2})/);
-    if (!match) return -1;
-    return parseInt(match[1]) * 60 + parseInt(match[2]);
-  }
-
-  function parseEndMinutes(time: string): number {
-    const match = time.match(/-(\d{1,2}):(\d{2})$/);
-    if (!match) return -1;
-    return parseInt(match[1]) * 60 + parseInt(match[2]);
-  }
-
   function getStatus(item: ScheduleItem): 'now' | 'upcoming' | 'past' {
-    if (item.allDay) return 'upcoming';
-    const start = parseStartMinutes(item.time);
-    const end = parseEndMinutes(item.time);
-    if (start === -1) return 'upcoming';
+    if (!isToday || item.allDay) return 'upcoming';
+    const startMatch = item.time.match(/^(\d{1,2}):(\d{2})/);
+    if (!startMatch) return 'upcoming';
+    const start = parseInt(startMatch[1]) * 60 + parseInt(startMatch[2]);
+    const endMatch = item.time.match(/-(\d{1,2}):(\d{2})$/);
+    const end = endMatch ? parseInt(endMatch[1]) * 60 + parseInt(endMatch[2]) : -1;
     if (currentMinutes >= start && (end === -1 || currentMinutes < end)) return 'now';
     if (end !== -1 && currentMinutes >= end) return 'past';
+    if (currentMinutes < start) return 'upcoming';
     return 'upcoming';
   }
 
   return (
     <div className="card">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-[15px] font-semibold text-[#1d1d1f]">スケジュール</h2>
-        <div className="flex items-center gap-2">
-          {lastUpdated && (
-            <span className="text-[11px] text-[#c7c7cc]">{lastUpdated} 更新</span>
-          )}
-          <span className="text-[12px] text-[#86868b]">Google Calendar</span>
-        </div>
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-[15px] font-semibold text-[--fg]">スケジュール</h2>
+        <span className="text-[12px] text-[--fg3]">Google Calendar</span>
+      </div>
+
+      {/* Date navigation */}
+      <div className="flex items-center justify-between mb-4 bg-[--bg2] rounded-xl px-2 py-1.5">
+        <button
+          onClick={() => setSelectedDate(shiftDate(selectedDate, -1))}
+          className="w-7 h-7 flex items-center justify-center text-[--fg2] hover:text-[--fg] transition-colors rounded-lg hover:bg-[--card]"
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+            <path d="M10 4L6 8L10 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </button>
+        <button
+          onClick={() => setSelectedDate(todayKey)}
+          className={`text-[13px] font-medium px-3 py-1 rounded-lg transition-colors ${
+            isToday ? 'text-[#007AFF]' : 'text-[--fg] hover:bg-[--card]'
+          }`}
+        >
+          {isToday ? '今日' : formatDateLabel(selectedDate)}
+        </button>
+        <button
+          onClick={() => setSelectedDate(shiftDate(selectedDate, 1))}
+          className="w-7 h-7 flex items-center justify-center text-[--fg2] hover:text-[--fg] transition-colors rounded-lg hover:bg-[--card]"
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+            <path d="M6 4L10 8L6 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </button>
       </div>
 
       {loading ? (
-        <p className="text-[13px] text-[#86868b] text-center py-8">読み込み中...</p>
+        <p className="text-[13px] text-[--fg2] text-center py-8">読み込み中...</p>
       ) : error ? (
         <div className="text-center py-6">
           <p className="text-[13px] text-[#FF3B30] mb-2">取得エラー</p>
-          <p className="text-[11px] text-[#86868b]">{error}</p>
+          <p className="text-[11px] text-[--fg2] break-all">{error}</p>
           <button
-            onClick={fetchEvents}
+            onClick={() => fetchEvents(selectedDate)}
             className="mt-3 text-[12px] text-[#007AFF] hover:underline"
           >
             再試行
           </button>
         </div>
       ) : schedule.length === 0 ? (
-        <p className="text-[13px] text-[#86868b] text-center py-8">今日の予定なし</p>
+        <p className="text-[13px] text-[--fg2] text-center py-8">予定なし</p>
       ) : (
         <div className="space-y-1">
           {schedule.map((item) => {
@@ -103,28 +140,28 @@ export default function CalendarPanel() {
                   status === 'now' ? 'bg-[#007AFF]/8' : ''
                 }`}
               >
-                <div className="w-[80px] shrink-0">
+                <div className="w-[60px] shrink-0">
                   {item.allDay ? (
-                    <span className="text-[12px] text-[#86868b]">終日</span>
+                    <span className="text-[12px] text-[--fg2]">終日</span>
                   ) : item.time ? (
                     <span className={`text-[13px] font-medium tabular-nums ${
-                      status === 'now' ? 'text-[#007AFF]' : 'text-[#86868b]'
+                      status === 'now' ? 'text-[#007AFF]' : 'text-[--fg2]'
                     }`}>
                       {item.time.split('-')[0]}
                     </span>
                   ) : (
-                    <span className="text-[13px] text-[#c7c7cc]">--:--</span>
+                    <span className="text-[13px] text-[--fg3]">--:--</span>
                   )}
                 </div>
                 <div className="mt-1.5 shrink-0">
                   <div className={`w-2 h-2 rounded-full ${
                     status === 'now' ? 'bg-[#007AFF] animate-pulse'
-                    : status === 'past' ? 'bg-[#86868b]'
-                    : 'bg-[#d2d2d7]'
+                    : status === 'past' ? 'bg-[--fg2]'
+                    : 'bg-[--border]'
                   }`} />
                 </div>
                 <span className={`text-[14px] leading-snug ${
-                  status === 'past' ? 'text-[#86868b]' : 'text-[#1d1d1f]'
+                  status === 'past' ? 'text-[--fg2]' : 'text-[--fg]'
                 }`}>
                   {item.title}
                 </span>

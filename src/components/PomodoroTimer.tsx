@@ -19,6 +19,7 @@ export default function PomodoroTimer() {
   const [timeLeft, setTimeLeft] = useState(DURATIONS.work);
   const [running, setRunning] = useState(false);
   const [sessions, setSessions] = useState(0);
+  const [expanded, setExpanded] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const reset = useCallback((newMode: Mode) => {
@@ -59,80 +60,116 @@ export default function PomodoroTimer() {
   const mins = Math.floor(timeLeft / 60);
   const secs = timeLeft % 60;
   const progress = 1 - timeLeft / DURATIONS[mode];
-  const circumference = 2 * Math.PI * 54;
+  const circumference = 2 * Math.PI * 22;
+  const timeStr = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  const isWork = mode === 'work';
+  const color = isWork ? '#FF9500' : '#34C759';
 
-  return (
-    <div className="card">
-      <div className="flex items-center gap-3 mb-5">
-        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-          mode === 'work' ? 'bg-orange-500' : 'bg-green-500'
-        }`}>
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <circle cx="8" cy="8" r="6" stroke="white" strokeWidth="2"/>
-            <path d="M8 4.5V8L10.5 9.5" stroke="white" strokeWidth="1.5" strokeLinecap="round"/>
-          </svg>
-        </div>
-        <h2 className="text-lg font-semibold text-gray-900">Pomodoro</h2>
-        <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
-          {sessions} done
-        </span>
-      </div>
-
-      <div className="flex flex-col items-center">
-        <div className="relative w-32 h-32 mb-4">
-          <svg className="w-32 h-32 -rotate-90" viewBox="0 0 120 120">
-            <circle cx="60" cy="60" r="54" fill="none" stroke="#f0f0f0" strokeWidth="6" />
-            <circle
-              cx="60" cy="60" r="54" fill="none"
-              stroke={mode === 'work' ? '#f97316' : '#22c55e'}
-              strokeWidth="6"
-              strokeLinecap="round"
-              strokeDasharray={circumference}
-              strokeDashoffset={circumference * (1 - progress)}
-              className="transition-all duration-1000 ease-linear"
-            />
-          </svg>
-          <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <span className="text-3xl font-light text-gray-900 tabular-nums tracking-tight">
-              {String(mins).padStart(2, '0')}:{String(secs).padStart(2, '0')}
-            </span>
-            <span className="text-[11px] text-gray-400 mt-0.5">{LABELS[mode]}</span>
+  // Floating pill (collapsed)
+  if (!expanded) {
+    return (
+      <div
+        className="fixed bottom-6 right-6 z-50 cursor-pointer"
+        onClick={() => setExpanded(true)}
+      >
+        <div className="flex items-center gap-2.5 bg-[--card] rounded-full px-4 py-2.5 shadow-lg border border-[--border] hover:shadow-xl transition-shadow">
+          {/* Mini circle */}
+          <div className="relative w-8 h-8">
+            <svg className="w-8 h-8 -rotate-90" viewBox="0 0 48 48">
+              <circle cx="24" cy="24" r="20" fill="none" stroke="currentColor" strokeWidth="3" className="text-[--bg2]" />
+              <circle
+                cx="24" cy="24" r="20" fill="none"
+                stroke={color}
+                strokeWidth="3"
+                strokeLinecap="round"
+                strokeDasharray={2 * Math.PI * 20}
+                strokeDashoffset={2 * Math.PI * 20 * (1 - progress)}
+                className="transition-all duration-1000 ease-linear"
+              />
+            </svg>
+            {running && (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ backgroundColor: color }} />
+              </div>
+            )}
           </div>
+          <span className="text-[14px] font-medium tabular-nums text-[--fg]">{timeStr}</span>
+          <span className="text-[11px] text-[--fg2]">{LABELS[mode]}</span>
+        </div>
+      </div>
+    );
+  }
+
+  // Expanded panel
+  return (
+    <div className="fixed bottom-6 right-6 z-50">
+      <div className="bg-[--card] rounded-2xl p-5 shadow-xl border border-[--border] w-[260px]">
+        {/* Close button */}
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <h3 className="text-[14px] font-semibold text-[--fg]">Pomodoro</h3>
+            <span className="text-[11px] text-[--fg3] bg-[--bg2] px-1.5 py-0.5 rounded-full">{sessions}</span>
+          </div>
+          <button
+            onClick={() => setExpanded(false)}
+            className="w-6 h-6 flex items-center justify-center text-[--fg3] hover:text-[--fg] rounded-md transition-colors"
+          >
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+              <path d="M4 4L12 12M12 4L4 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+            </svg>
+          </button>
         </div>
 
-        <div className="flex gap-2">
-          <button
-            onClick={() => setRunning(!running)}
-            className={`px-5 py-2 rounded-full text-sm font-medium transition-all ${
-              running
-                ? 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                : mode === 'work'
-                  ? 'bg-orange-500 text-white hover:bg-orange-600'
-                  : 'bg-green-500 text-white hover:bg-green-600'
-            }`}
-          >
-            {running ? 'Pause' : 'Start'}
-          </button>
-          <button
-            onClick={() => reset(mode)}
-            className="px-4 py-2 rounded-full text-sm text-gray-500 hover:bg-gray-100 transition-colors"
-          >
-            Reset
-          </button>
-        </div>
+        {/* Timer circle */}
+        <div className="flex flex-col items-center">
+          <div className="relative w-28 h-28 mb-4">
+            <svg className="w-28 h-28 -rotate-90" viewBox="0 0 120 120">
+              <circle cx="60" cy="60" r="52" fill="none" stroke="currentColor" strokeWidth="5" className="text-[--bg2]" />
+              <circle
+                cx="60" cy="60" r="52" fill="none"
+                stroke={color}
+                strokeWidth="5"
+                strokeLinecap="round"
+                strokeDasharray={2 * Math.PI * 52}
+                strokeDashoffset={2 * Math.PI * 52 * (1 - progress)}
+                className="transition-all duration-1000 ease-linear"
+              />
+            </svg>
+            <div className="absolute inset-0 flex flex-col items-center justify-center">
+              <span className="text-2xl font-light text-[--fg] tabular-nums tracking-tight">{timeStr}</span>
+              <span className="text-[10px] text-[--fg2] mt-0.5">{LABELS[mode]}</span>
+            </div>
+          </div>
 
-        <div className="flex gap-1 mt-4">
-          {(['work', 'break', 'longBreak'] as Mode[]).map(m => (
+          <div className="flex gap-2">
             <button
-              key={m}
-              onClick={() => reset(m)}
-              className={`px-3 py-1 rounded-full text-[11px] transition-colors ${
-                mode === m ? 'bg-gray-200 text-gray-700 font-medium' : 'text-gray-400 hover:text-gray-600'
-              }`}
+              onClick={() => setRunning(!running)}
+              className="px-5 py-2 rounded-full text-[13px] font-medium transition-all text-white"
+              style={{ backgroundColor: running ? '#8E8E93' : color }}
             >
-              {LABELS[m]}
+              {running ? 'Pause' : 'Start'}
             </button>
-          ))}
+            <button
+              onClick={() => reset(mode)}
+              className="px-3 py-2 rounded-full text-[13px] text-[--fg2] hover:bg-[--bg2] transition-colors"
+            >
+              Reset
+            </button>
+          </div>
+
+          <div className="flex gap-1 mt-3">
+            {(['work', 'break', 'longBreak'] as Mode[]).map(m => (
+              <button
+                key={m}
+                onClick={() => reset(m)}
+                className={`px-2.5 py-1 rounded-full text-[10px] transition-colors ${
+                  mode === m ? 'bg-[--bg2] text-[--fg] font-medium' : 'text-[--fg3] hover:text-[--fg2]'
+                }`}
+              >
+                {LABELS[m]}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
     </div>

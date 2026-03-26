@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import CalendarPanel from './components/CalendarPanel';
 import TaskPanel from './components/TaskPanel';
 import HealthTracker from './components/HealthTracker';
@@ -11,14 +12,44 @@ function formatToday(): string {
 }
 
 function App() {
+  const [dark, setDark] = useState(() => {
+    try {
+      return localStorage.getItem('matsumoto-theme') === 'dark';
+    } catch { return false; }
+  });
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+    localStorage.setItem('matsumoto-theme', dark ? 'dark' : 'light');
+  }, [dark]);
+
   return (
-    <div className="min-h-screen bg-[#f5f5f7]">
-      <header className="sticky top-0 z-50 backdrop-blur-xl bg-white/80 border-b border-[#d2d2d7]/40">
-        <div className="max-w-[1200px] mx-auto px-5 py-4">
-          <h1 className="text-[20px] font-semibold text-[#1d1d1f] tracking-tight">
-            Dashboard
-          </h1>
-          <p className="text-[13px] text-[#86868b] mt-0.5">{formatToday()}</p>
+    <div className="min-h-screen bg-[--bg]">
+      <header className="sticky top-0 z-40 backdrop-blur-xl bg-[--header] border-b border-[--border]">
+        <div className="max-w-[1200px] mx-auto px-5 py-4 flex items-center justify-between">
+          <div>
+            <h1 className="text-[20px] font-semibold text-[--fg] tracking-tight">
+              Dashboard
+            </h1>
+            <p className="text-[13px] text-[--fg2] mt-0.5">{formatToday()}</p>
+          </div>
+          {/* Dark mode toggle */}
+          <button
+            onClick={() => setDark(!dark)}
+            className="w-8 h-8 flex items-center justify-center rounded-lg text-[--fg2] hover:text-[--fg] hover:bg-[--bg2] transition-all"
+            title={dark ? 'ライトモード' : 'ダークモード'}
+          >
+            {dark ? (
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <circle cx="8" cy="8" r="3.5" stroke="currentColor" strokeWidth="1.5"/>
+                <path d="M8 1.5V3M8 13V14.5M1.5 8H3M13 8H14.5M3.05 3.05L4.1 4.1M11.9 11.9L12.95 12.95M12.95 3.05L11.9 4.1M4.1 11.9L3.05 12.95" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+              </svg>
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M14 9.5A6.5 6.5 0 016.5 2 6.5 6.5 0 108 14.5a6.47 6.47 0 006-5z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            )}
+          </button>
         </div>
       </header>
 
@@ -29,13 +60,15 @@ function App() {
           <TaskPanel />
         </section>
 
-        {/* Row 2: Health + Pomodoro + Memo */}
-        <section className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        {/* Row 2: Health + Memo */}
+        <section className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           <HealthTracker />
-          <PomodoroTimer />
           <QuickMemo />
         </section>
       </main>
+
+      {/* Floating Pomodoro */}
+      <PomodoroTimer />
     </div>
   );
 }
