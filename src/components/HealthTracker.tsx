@@ -124,6 +124,14 @@ export default function HealthTracker() {
         >
           {isToday ? '今日' : formatDateLabel(selectedDate)}
         </button>
+        {!isToday && (
+          <button
+            onClick={() => setSelectedDate(todayKey)}
+            className="text-[12px] text-[#007AFF] font-medium px-2 py-0.5 rounded-md hover:bg-white transition-colors"
+          >
+            今日
+          </button>
+        )}
         <button
           onClick={() => {
             const next = shiftDate(selectedDate, 1);

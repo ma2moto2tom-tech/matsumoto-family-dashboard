@@ -124,22 +124,23 @@ export default function QuickMemo() {
       </div>
 
       {/* Input */}
-      <div className="flex gap-2 mb-3">
-        <input
-          type="text"
+      <div className="mb-3">
+        <textarea
           value={input}
           onChange={e => setInput(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && addMemo()}
           placeholder="思ったことを記録..."
-          className="flex-1 px-3 py-2 text-[14px] bg-[#f5f5f7] rounded-xl border-none outline-none placeholder:text-[#c7c7cc] focus:ring-2 focus:ring-[#007AFF]/20 transition-all"
+          rows={3}
+          className="w-full px-3 py-2.5 text-[14px] bg-[#f5f5f7] rounded-xl border-none outline-none placeholder:text-[#c7c7cc] focus:ring-2 focus:ring-[#007AFF]/20 transition-all resize-none leading-relaxed"
         />
-        <button
-          onClick={addMemo}
-          disabled={!input.trim()}
-          className="w-8 h-8 flex items-center justify-center bg-[#007AFF] text-white rounded-xl text-[16px] font-medium hover:bg-[#0056b3] disabled:opacity-30 transition-all self-center"
-        >
-          +
-        </button>
+        <div className="flex justify-end mt-1.5">
+          <button
+            onClick={addMemo}
+            disabled={!input.trim()}
+            className="px-4 py-1.5 text-[13px] font-medium bg-[#007AFF] text-white rounded-lg hover:bg-[#0056b3] disabled:opacity-30 transition-all"
+          >
+            記録する
+          </button>
+        </div>
       </div>
 
       {/* Memos for selected date */}
