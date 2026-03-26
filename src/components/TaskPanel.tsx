@@ -1,136 +1,144 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 
-interface ChatworkTask {
-  task_id: number;
-  room: { room_id: number; name: string };
-  body: string;
-  limit_time: number;
-  status: string;
+interface TaskItem {
+  id: string;
+  text: string;
+  done: boolean;
+}
+
+interface GoalItem {
+  text: string;
+  done: boolean;
+}
+
+interface BriefingData {
+  date: string;
+  tasks: TaskItem[];
+  goals: GoalItem[];
+  later: string[];
 }
 
 export default function TaskPanel() {
-  const [tasks, setTasks] = useState<ChatworkTask[]>([]);
+  const [tasks, setTasks] = useState<TaskItem[]>([]);
+  const [goals, setGoals] = useState<GoalItem[]>([]);
+  const [later, setLater] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [completing, setCompleting] = useState<Set<number>>(new Set());
+  const [showLater, setShowLater] = useState(false);
 
-  const fetchTasks = useCallback(async () => {
-    try {
-      const res = await fetch('/api/chatwork-tasks');
-      if (!res.ok) throw new Error('Failed to fetch');
-      const data: ChatworkTask[] = await res.json();
-      // Filter: only show tasks due today or earlier (including no deadline)
-      const endOfToday = new Date();
-      endOfToday.setHours(23, 59, 59, 999);
-      const endOfTodayTs = Math.floor(endOfToday.getTime() / 1000);
-      const filtered = data.filter(t => !t.limit_time || t.limit_time <= endOfTodayTs);
-      setTasks(filtered);
-      setError(null);
-    } catch {
-      setError('タスクの取得に失敗しました');
-    } finally {
-      setLoading(false);
-    }
+  useEffect(() => {
+    fetch('/data/briefing.json')
+      .then(r => r.json())
+      .then((data: BriefingData) => {
+        setTasks(data.tasks || []);
+        setGoals(data.goals || []);
+        setLater(data.later || []);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
   }, []);
 
-  useEffect(() => { fetchTasks(); }, [fetchTasks]);
-
-  const completeTask = async (task: ChatworkTask) => {
-    setCompleting(prev => new Set(prev).add(task.task_id));
-    try {
-      const res = await fetch('/api/chatwork-complete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ roomId: task.room.room_id, taskId: task.task_id }),
-      });
-      if (res.ok) {
-        setTasks(prev => prev.filter(t => t.task_id !== task.task_id));
-      }
-    } catch {
-      // silently fail
-    } finally {
-      setCompleting(prev => {
-        const next = new Set(prev);
-        next.delete(task.task_id);
-        return next;
-      });
-    }
+  const toggleTask = (id: string) => {
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, done: !t.done } : t));
   };
 
-  const formatDeadline = (ts: number) => {
-    if (!ts) return '';
-    const d = new Date(ts * 1000);
-    const now = new Date();
-    const diffDays = Math.ceil((d.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-    if (diffDays < 0) return '期限切れ';
-    if (diffDays === 0) return '今日まで';
-    if (diffDays === 1) return '明日まで';
-    return `${d.getMonth() + 1}/${d.getDate()}まで`;
-  };
+  const doneCount = tasks.filter(t => t.done).length;
 
   return (
     <div className="card">
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-[15px] font-semibold text-[#1d1d1f]">タスク</h2>
-        <button
-          onClick={fetchTasks}
-          className="text-[13px] text-[#007AFF] hover:text-[#0056b3] transition-colors"
-        >
-          更新
-        </button>
+        <h2 className="text-[15px] font-semibold text-[#1d1d1f]">今日やること</h2>
+        {tasks.length > 0 && (
+          <span className="text-[12px] text-[#86868b] tabular-nums">
+            {doneCount}/{tasks.length}
+          </span>
+        )}
       </div>
 
-      {loading && (
-        <div className="py-8 text-center text-[13px] text-[#86868b]">読み込み中...</div>
-      )}
+      {loading ? (
+        <p className="text-[13px] text-[#86868b] text-center py-8">読み込み中...</p>
+      ) : (
+        <>
+          {/* Progress bar */}
+          {tasks.length > 0 && (
+            <div className="h-1 bg-[#e5e5ea] rounded-full mb-4 overflow-hidden">
+              <div
+                className="h-full bg-[#34C759] rounded-full transition-all duration-500"
+                style={{ width: `${(doneCount / tasks.length) * 100}%` }}
+              />
+            </div>
+          )}
 
-      {error && (
-        <div className="py-8 text-center text-[13px] text-[#86868b]">{error}</div>
-      )}
-
-      {!loading && !error && tasks.length === 0 && (
-        <div className="py-8 text-center text-[13px] text-[#86868b]">タスクなし</div>
-      )}
-
-      <div className="space-y-1">
-        {tasks.map(task => {
-          const isCompleting = completing.has(task.task_id);
-          const deadline = formatDeadline(task.limit_time);
-          const isOverdue = task.limit_time && task.limit_time * 1000 < Date.now();
-
-          return (
-            <div
-              key={task.task_id}
-              className={`flex items-start gap-3 py-2.5 px-1 rounded-lg transition-all ${
-                isCompleting ? 'opacity-40' : 'hover:bg-[#f5f5f7]'
-              }`}
-            >
-              <button
-                onClick={() => completeTask(task)}
-                disabled={isCompleting}
-                className="mt-0.5 w-[20px] h-[20px] rounded-full border-2 border-[#c7c7cc] hover:border-[#007AFF] transition-colors flex-shrink-0 flex items-center justify-center"
+          {/* Tasks */}
+          <div className="space-y-0.5 max-h-[320px] overflow-y-auto">
+            {tasks.map(task => (
+              <div
+                key={task.id}
+                className={`flex items-start gap-3 py-2 px-2 rounded-xl cursor-pointer transition-all ${
+                  task.done ? 'opacity-40' : 'hover:bg-[#f5f5f7]'
+                }`}
+                onClick={() => toggleTask(task.id)}
               >
-                {isCompleting && (
-                  <div className="w-2.5 h-2.5 rounded-full bg-[#007AFF]" />
-                )}
-              </button>
-              <div className="flex-1 min-w-0">
-                <p className="text-[14px] text-[#1d1d1f] leading-snug break-words">
-                  {task.body.length > 80 ? task.body.slice(0, 80) + '...' : task.body}
-                </p>
-                <div className="flex items-center gap-2 mt-1">
-                  <span className="text-[11px] text-[#86868b]">{task.room.name}</span>
-                  {deadline && (
-                    <span className={`text-[11px] ${isOverdue ? 'text-[#FF3B30]' : 'text-[#86868b]'}`}>
-                      {deadline}
-                    </span>
+                <div className={`mt-0.5 w-[18px] h-[18px] rounded-full border-2 flex-shrink-0 flex items-center justify-center transition-all ${
+                  task.done ? 'border-[#34C759] bg-[#34C759]' : 'border-[#c7c7cc]'
+                }`}>
+                  {task.done && (
+                    <svg width="10" height="10" viewBox="0 0 16 16" fill="none">
+                      <path d="M3.5 8.5L6.5 11.5L12.5 5.5" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
                   )}
                 </div>
+                <span className={`text-[14px] leading-snug ${
+                  task.done ? 'text-[#86868b] line-through' : 'text-[#1d1d1f]'
+                }`}>
+                  {task.text}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          {/* Goals */}
+          {goals.length > 0 && (
+            <div className="mt-4 pt-3 border-t border-[#e5e5ea]">
+              <p className="text-[11px] text-[#86868b] mb-2 uppercase tracking-wider">Today's Goal</p>
+              <div className="space-y-1">
+                {goals.map((g, i) => (
+                  <div key={i} className={`flex items-start gap-2 text-[13px] ${g.done ? 'text-[#86868b] line-through' : 'text-[#1d1d1f]'}`}>
+                    <span className="shrink-0">{g.done ? '—' : '·'}</span>
+                    <span>{g.text}</span>
+                  </div>
+                ))}
               </div>
             </div>
-          );
-        })}
-      </div>
+          )}
+
+          {/* Later items */}
+          {later.length > 0 && (
+            <div className="mt-3">
+              <button
+                onClick={() => setShowLater(!showLater)}
+                className="flex items-center gap-1 text-[12px] text-[#86868b] hover:text-[#1d1d1f] transition-colors"
+              >
+                <svg
+                  width="10" height="10" viewBox="0 0 16 16" fill="none"
+                  className={`transition-transform ${showLater ? 'rotate-90' : ''}`}
+                >
+                  <path d="M6 4L10 8L6 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+                今日じゃなくていいもの ({later.length})
+              </button>
+              {showLater && (
+                <div className="mt-2 space-y-1 pl-3">
+                  {later.map((item, i) => (
+                    <p key={i} className="text-[12px] text-[#86868b] leading-snug">
+                      · {item}
+                    </p>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }

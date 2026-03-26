@@ -1,82 +1,164 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
-interface Memo {
+interface MemoEntry {
   id: string;
   text: string;
-  time: string;
+  timestamp: number;
+}
+
+type MemoData = Record<string, MemoEntry[]>;
+
+const STORAGE_KEY = 'matsumoto-memos';
+
+function dateKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function formatDateLabel(key: string): string {
+  const [, m, d] = key.split('-');
+  const date = new Date(key + 'T00:00:00');
+  const weekdays = ['日', '月', '火', '水', '木', '金', '土'];
+  return `${parseInt(m)}/${parseInt(d)}（${weekdays[date.getDay()]}）`;
+}
+
+function shiftDate(key: string, days: number): string {
+  const d = new Date(key + 'T00:00:00');
+  d.setDate(d.getDate() + days);
+  return dateKey(d);
+}
+
+function loadMemos(): MemoData {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch { return {}; }
+}
+
+function saveMemos(data: MemoData) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 }
 
 export default function QuickMemo() {
-  const [memos, setMemos] = useState<Memo[]>(() => {
-    try {
-      const saved = localStorage.getItem('quick-memos');
-      return saved ? JSON.parse(saved) : [];
-    } catch { return []; }
-  });
+  const todayKey = dateKey(new Date());
+  const [data, setData] = useState<MemoData>(loadMemos);
+  const [selectedDate, setSelectedDate] = useState(todayKey);
   const [input, setInput] = useState('');
+  const isToday = selectedDate === todayKey;
 
-  useEffect(() => {
-    localStorage.setItem('quick-memos', JSON.stringify(memos));
-  }, [memos]);
+  const memos = data[selectedDate] || [];
+
+  useEffect(() => { saveMemos(data); }, [data]);
+
+  const persistToServer = useCallback((updated: MemoData) => {
+    fetch('/api/save-data', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ file: 'memos.json', data: updated }),
+    }).catch(() => {});
+  }, []);
 
   const addMemo = () => {
     if (!input.trim()) return;
     const now = new Date();
-    const time = `${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')}`;
-    setMemos(prev => [{ id: crypto.randomUUID(), text: input.trim(), time }, ...prev]);
+    const entry: MemoEntry = {
+      id: crypto.randomUUID(),
+      text: input.trim(),
+      timestamp: now.getTime(),
+    };
+    const updated = { ...data };
+    updated[selectedDate] = [entry, ...(updated[selectedDate] || [])];
+    setData(updated);
+    persistToServer(updated);
     setInput('');
   };
 
   const deleteMemo = (id: string) => {
-    setMemos(prev => prev.filter(m => m.id !== id));
+    const updated = { ...data };
+    updated[selectedDate] = (updated[selectedDate] || []).filter(m => m.id !== id);
+    if (updated[selectedDate].length === 0) delete updated[selectedDate];
+    setData(updated);
+    persistToServer(updated);
   };
+
+  const formatTime = (ts: number) => {
+    const d = new Date(ts);
+    return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
+  };
+
+  // Get all dates that have memos
+  const memoDates = Object.keys(data).sort().reverse();
 
   return (
     <div className="card">
-      <div className="flex items-center gap-3 mb-4">
-        <div className="w-8 h-8 rounded-lg bg-yellow-500 flex items-center justify-center">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path d="M3 3H10L13 6V13H3V3Z" stroke="white" strokeWidth="1.5" strokeLinejoin="round"/>
-            <path d="M5 8H11M5 10.5H9" stroke="white" strokeWidth="1.5" strokeLinecap="round"/>
-          </svg>
-        </div>
-        <h2 className="text-lg font-semibold text-gray-900">Memo</h2>
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-[15px] font-semibold text-[#1d1d1f]">メモ</h2>
       </div>
 
+      {/* Date navigation */}
+      <div className="flex items-center justify-between mb-3 bg-[#f5f5f7] rounded-xl px-2 py-1.5">
+        <button
+          onClick={() => setSelectedDate(shiftDate(selectedDate, -1))}
+          className="w-7 h-7 flex items-center justify-center text-[#86868b] hover:text-[#1d1d1f] transition-colors rounded-lg hover:bg-white"
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+            <path d="M10 4L6 8L10 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </button>
+        <button
+          onClick={() => setSelectedDate(todayKey)}
+          className={`text-[13px] font-medium px-3 py-1 rounded-lg transition-colors ${
+            isToday ? 'text-[#007AFF]' : 'text-[#1d1d1f] hover:bg-white'
+          }`}
+        >
+          {isToday ? '今日' : formatDateLabel(selectedDate)}
+        </button>
+        <button
+          onClick={() => setSelectedDate(shiftDate(selectedDate, 1))}
+          disabled={selectedDate >= todayKey}
+          className="w-7 h-7 flex items-center justify-center text-[#86868b] hover:text-[#1d1d1f] transition-colors rounded-lg hover:bg-white disabled:opacity-30"
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+            <path d="M6 4L10 8L6 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </button>
+      </div>
+
+      {/* Input */}
       <div className="flex gap-2 mb-3">
         <input
           type="text"
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && addMemo()}
-          placeholder="Write something..."
-          className="flex-1 px-3 py-2 text-sm bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400 transition-all placeholder:text-gray-300"
+          placeholder="思ったことを記録..."
+          className="flex-1 px-3 py-2 text-[14px] bg-[#f5f5f7] rounded-xl border-none outline-none placeholder:text-[#c7c7cc] focus:ring-2 focus:ring-[#007AFF]/20 transition-all"
         />
         <button
           onClick={addMemo}
           disabled={!input.trim()}
-          className="px-3 py-2 bg-yellow-500 text-white rounded-xl text-sm font-medium hover:bg-yellow-600 disabled:opacity-30 disabled:hover:bg-yellow-500 transition-all"
+          className="w-8 h-8 flex items-center justify-center bg-[#007AFF] text-white rounded-xl text-[16px] font-medium hover:bg-[#0056b3] disabled:opacity-30 transition-all self-center"
         >
           +
         </button>
       </div>
 
-      <div className="space-y-1 max-h-48 overflow-y-auto">
+      {/* Memos for selected date */}
+      <div className="space-y-1 max-h-[200px] overflow-y-auto">
         {memos.length === 0 && (
-          <p className="text-sm text-gray-300 py-3 text-center">No memos yet</p>
+          <p className="text-[13px] text-[#c7c7cc] py-4 text-center">メモなし</p>
         )}
         {memos.map(memo => (
           <div
             key={memo.id}
-            className="flex items-start gap-2 px-2 py-1.5 rounded-lg group hover:bg-gray-50 transition-colors"
+            className="flex items-start gap-2 px-2 py-1.5 rounded-lg group hover:bg-[#f5f5f7] transition-colors"
           >
-            <span className="text-[11px] text-gray-300 mt-0.5 flex-shrink-0 tabular-nums">
-              {memo.time}
+            <span className="text-[11px] text-[#c7c7cc] mt-0.5 flex-shrink-0 tabular-nums">
+              {formatTime(memo.timestamp)}
             </span>
-            <p className="text-sm text-gray-700 flex-1 leading-snug">{memo.text}</p>
+            <p className="text-[14px] text-[#1d1d1f] flex-1 leading-snug">{memo.text}</p>
             <button
               onClick={() => deleteMemo(memo.id)}
-              className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-400 transition-all flex-shrink-0 mt-0.5"
+              className="opacity-0 group-hover:opacity-100 text-[#c7c7cc] hover:text-[#FF3B30] transition-all flex-shrink-0 mt-0.5"
             >
               <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
                 <path d="M4 4L12 12M12 4L4 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
@@ -85,6 +167,23 @@ export default function QuickMemo() {
           </div>
         ))}
       </div>
+
+      {/* Jump to dates with memos */}
+      {memoDates.length > 1 && (
+        <div className="border-t border-[#e5e5ea] pt-2 mt-3">
+          <div className="flex gap-1.5 flex-wrap">
+            {memoDates.filter(d => d !== selectedDate).slice(0, 7).map(d => (
+              <button
+                key={d}
+                onClick={() => setSelectedDate(d)}
+                className="text-[11px] text-[#86868b] hover:text-[#007AFF] px-2 py-1 rounded-lg hover:bg-[#f5f5f7] transition-colors tabular-nums"
+              >
+                {formatDateLabel(d).split('（')[0]}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
