@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 interface HealthEntry {
   weight: string;
@@ -6,6 +6,7 @@ interface HealthEntry {
   bpDiastolic: string;
   alcohol: string;
   diary: string;
+  timestamp?: number;
 }
 
 type HealthData = Record<string, HealthEntry>;
@@ -40,11 +41,31 @@ function shiftDate(key: string, days: number): string {
   return dateKey(d);
 }
 
+function mergeData(local: HealthData, remote: HealthData): HealthData {
+  const merged = { ...remote };
+  for (const key of Object.keys(local)) {
+    if (!merged[key]) {
+      merged[key] = local[key];
+    } else {
+      // Keep whichever has a newer timestamp, or local if no timestamps
+      const localTs = local[key].timestamp || 0;
+      const remoteTs = merged[key].timestamp || 0;
+      if (localTs > remoteTs) {
+        merged[key] = local[key];
+      }
+    }
+  }
+  return merged;
+}
+
 export default function HealthTracker() {
   const todayKey = dateKey(new Date());
   const [data, setData] = useState<HealthData>(loadData);
   const [selectedDate, setSelectedDate] = useState(todayKey);
   const [saved, setSaved] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [lastSync, setLastSync] = useState('');
+  const initialLoadDone = useRef<boolean>(false);
 
   const entry = data[selectedDate] || { weight: '', bpSystolic: '', bpDiastolic: '', alcohol: '', diary: '' };
   const isToday = selectedDate === todayKey;
@@ -54,6 +75,30 @@ export default function HealthTracker() {
   const [bpDiastolic, setBpDiastolic] = useState(entry.bpDiastolic);
   const [alcohol, setAlcohol] = useState(entry.alcohol);
   const [diary, setDiary] = useState(entry.diary);
+
+  // Fetch from GitHub on mount
+  useEffect(() => {
+    if (initialLoadDone.current) return;
+    initialLoadDone.current = true;
+
+    setSyncing(true);
+    fetch('/api/health')
+      .then(res => res.json())
+      .then((remote: HealthData) => {
+        if (remote && Object.keys(remote).length > 0) {
+          const local = loadData();
+          const merged = mergeData(local, remote);
+          setData(merged);
+          saveData(merged);
+        }
+        const now = new Date();
+        setLastSync(`${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')}`);
+      })
+      .catch(() => {
+        // Fall back to localStorage (already loaded)
+      })
+      .finally(() => setSyncing(false));
+  }, []);
 
   // Sync form when date changes
   useEffect(() => {
@@ -65,9 +110,31 @@ export default function HealthTracker() {
     setDiary(e.diary);
   }, [selectedDate, data]);
 
+  const syncToGitHub = useCallback((updated: HealthData) => {
+    setSyncing(true);
+    fetch('/api/health', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updated),
+    })
+      .then(() => {
+        const now = new Date();
+        setLastSync(`${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')}`);
+      })
+      .catch(() => {})
+      .finally(() => setSyncing(false));
+  }, []);
+
   const save = useCallback(() => {
-    const newEntry: HealthEntry = { weight, bpSystolic, bpDiastolic, alcohol, diary };
-    const hasContent = Object.values(newEntry).some(v => v.trim() !== '');
+    const newEntry: HealthEntry = {
+      weight,
+      bpSystolic,
+      bpDiastolic,
+      alcohol,
+      diary,
+      timestamp: Date.now(),
+    };
+    const hasContent = weight.trim() || bpSystolic.trim() || bpDiastolic.trim() || alcohol.trim() || diary.trim();
     const updated = { ...data };
     if (hasContent) {
       updated[selectedDate] = newEntry;
@@ -76,15 +143,10 @@ export default function HealthTracker() {
     }
     setData(updated);
     saveData(updated);
-    // Also save to file via API
-    fetch('/api/save-data', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ file: 'health.json', data: updated }),
-    }).catch(() => {});
+    syncToGitHub(updated);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
-  }, [weight, bpSystolic, bpDiastolic, alcohol, diary, selectedDate, data]);
+  }, [weight, bpSystolic, bpDiastolic, alcohol, diary, selectedDate, data, syncToGitHub]);
 
   // Get sorted dates that have entries
   const entryDates = Object.keys(data).sort().reverse();
@@ -95,7 +157,15 @@ export default function HealthTracker() {
     <div className="card">
       {/* Header with date nav */}
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-[15px] font-semibold text-[--fg]">ヘルスログ</h2>
+        <div className="flex items-center gap-2">
+          <h2 className="text-[15px] font-semibold text-[--fg]">ヘルスログ</h2>
+          {syncing && (
+            <span className="text-[10px] text-[#007AFF] animate-pulse">同期中...</span>
+          )}
+          {!syncing && lastSync && (
+            <span className="text-[10px] text-[--fg3]">{lastSync}</span>
+          )}
+        </div>
         <button
           onClick={save}
           className={`text-[13px] font-medium transition-all ${

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 interface MemoEntry {
   id: string;
@@ -38,23 +38,80 @@ function saveMemos(data: MemoData) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 }
 
+function mergeData(local: MemoData, remote: MemoData): MemoData {
+  const merged: MemoData = {};
+  const allDates = new Set([...Object.keys(local), ...Object.keys(remote)]);
+  for (const date of allDates) {
+    const localMemos = local[date] || [];
+    const remoteMemos = remote[date] || [];
+    const byId = new Map<string, MemoEntry>();
+    // Remote first, then local overwrites if same id
+    for (const m of remoteMemos) byId.set(m.id, m);
+    for (const m of localMemos) {
+      const existing = byId.get(m.id);
+      if (!existing || m.timestamp >= existing.timestamp) {
+        byId.set(m.id, m);
+      }
+    }
+    const entries = Array.from(byId.values()).sort((a, b) => b.timestamp - a.timestamp);
+    if (entries.length > 0) {
+      merged[date] = entries;
+    }
+  }
+  return merged;
+}
+
 export default function QuickMemo() {
   const todayKey = dateKey(new Date());
   const [data, setData] = useState<MemoData>(loadMemos);
   const [selectedDate, setSelectedDate] = useState(todayKey);
   const [input, setInput] = useState('');
+  const [syncing, setSyncing] = useState(false);
+  const [lastSync, setLastSync] = useState('');
+  const initialLoadDone = useRef<boolean>(false);
   const isToday = selectedDate === todayKey;
 
   const memos = data[selectedDate] || [];
 
   useEffect(() => { saveMemos(data); }, [data]);
 
-  const persistToServer = useCallback((updated: MemoData) => {
-    fetch('/api/save-data', {
+  // Fetch from GitHub on mount
+  useEffect(() => {
+    if (initialLoadDone.current) return;
+    initialLoadDone.current = true;
+
+    setSyncing(true);
+    fetch('/api/memos')
+      .then(res => res.json())
+      .then((remote: MemoData) => {
+        if (remote && Object.keys(remote).length > 0) {
+          const local = loadMemos();
+          const merged = mergeData(local, remote);
+          setData(merged);
+          saveMemos(merged);
+        }
+        const now = new Date();
+        setLastSync(`${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')}`);
+      })
+      .catch(() => {
+        // Fall back to localStorage (already loaded)
+      })
+      .finally(() => setSyncing(false));
+  }, []);
+
+  const syncToGitHub = useCallback((updated: MemoData) => {
+    setSyncing(true);
+    fetch('/api/memos', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ file: 'memos.json', data: updated }),
-    }).catch(() => {});
+      body: JSON.stringify(updated),
+    })
+      .then(() => {
+        const now = new Date();
+        setLastSync(`${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')}`);
+      })
+      .catch(() => {})
+      .finally(() => setSyncing(false));
   }, []);
 
   const addMemo = () => {
@@ -68,7 +125,7 @@ export default function QuickMemo() {
     const updated = { ...data };
     updated[selectedDate] = [entry, ...(updated[selectedDate] || [])];
     setData(updated);
-    persistToServer(updated);
+    syncToGitHub(updated);
     setInput('');
   };
 
@@ -77,7 +134,7 @@ export default function QuickMemo() {
     updated[selectedDate] = (updated[selectedDate] || []).filter(m => m.id !== id);
     if (updated[selectedDate].length === 0) delete updated[selectedDate];
     setData(updated);
-    persistToServer(updated);
+    syncToGitHub(updated);
   };
 
   const formatTime = (ts: number) => {
@@ -91,7 +148,15 @@ export default function QuickMemo() {
   return (
     <div className="card">
       <div className="flex items-center justify-between mb-3">
-        <h2 className="text-[15px] font-semibold text-[--fg]">メモ</h2>
+        <div className="flex items-center gap-2">
+          <h2 className="text-[15px] font-semibold text-[--fg]">メモ</h2>
+          {syncing && (
+            <span className="text-[10px] text-[#007AFF] animate-pulse">同期中...</span>
+          )}
+          {!syncing && lastSync && (
+            <span className="text-[10px] text-[--fg3]">{lastSync}</span>
+          )}
+        </div>
       </div>
 
       {/* Date navigation */}

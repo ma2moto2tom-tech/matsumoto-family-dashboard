@@ -1,7 +1,7 @@
 export const config = { runtime: 'edge' };
 
 const REPO = 'ma2moto2tom-tech/matsumoto-family-dashboard';
-const FILE_PATH = 'TASKS.md';
+const FILE_PATH = 'data/memos.json';
 
 async function getFile(token: string): Promise<{ content: string; sha: string } | null> {
   const res = await fetch(`https://api.github.com/repos/${REPO}/contents/${FILE_PATH}`, {
@@ -24,8 +24,8 @@ async function putFile(token: string, content: string, sha?: string): Promise<bo
       .map(b => String.fromCharCode(b))
       .join('')
   );
-  const body: any = {
-    message: `Update tasks ${new Date().toISOString().slice(0, 10)}`,
+  const body: Record<string, unknown> = {
+    message: `Update memos ${new Date().toISOString().slice(0, 10)}`,
     content: encoded,
   };
   if (sha) body.sha = sha;
@@ -40,73 +40,6 @@ async function putFile(token: string, content: string, sha?: string): Promise<bo
     body: JSON.stringify(body),
   });
   return res.ok;
-}
-
-function parseTasksMd(content: string): Record<string, any> {
-  const data: Record<string, any> = {};
-  let currentDate = '';
-  let inGoals = false;
-
-  for (const line of content.split('\n')) {
-    const dateMatch = line.match(/^## (\d{4}-\d{2}-\d{2})/);
-    if (dateMatch) {
-      currentDate = dateMatch[1];
-      data[currentDate] = { tasks: [], goals: [] };
-      inGoals = false;
-      continue;
-    }
-    if (!currentDate) continue;
-
-    if (line.match(/^### 目標/) || line.match(/^### Goals?/i)) {
-      inGoals = true;
-      continue;
-    }
-    if (line.match(/^### /)) {
-      inGoals = false;
-      continue;
-    }
-
-    const taskMatch = line.match(/^- \[([ x])\] (.+)/);
-    if (taskMatch) {
-      const done = taskMatch[1] === 'x';
-      const text = taskMatch[2].trim();
-      if (inGoals) {
-        data[currentDate].goals.push({ text, done });
-      } else {
-        data[currentDate].tasks.push({
-          id: Math.random().toString(36).slice(2, 10),
-          text,
-          done,
-        });
-      }
-    }
-  }
-  return data;
-}
-
-function toTasksMd(data: Record<string, any>): string {
-  const dates = Object.keys(data).sort().reverse();
-  const lines: string[] = ['# Tasks\n'];
-
-  for (const date of dates) {
-    const day = data[date];
-    lines.push(`## ${date}\n`);
-    if (day.tasks?.length > 0) {
-      lines.push('### タスク');
-      for (const t of day.tasks) {
-        lines.push(`- [${t.done ? 'x' : ' '}] ${t.text}`);
-      }
-      lines.push('');
-    }
-    if (day.goals?.length > 0) {
-      lines.push('### 目標');
-      for (const g of day.goals) {
-        lines.push(`- [${g.done ? 'x' : ' '}] ${g.text}`);
-      }
-      lines.push('');
-    }
-  }
-  return lines.join('\n');
 }
 
 export default async function handler(req: Request) {
@@ -130,8 +63,7 @@ export default async function handler(req: Request) {
     if (req.method === 'GET') {
       const file = await getFile(token);
       if (!file) return new Response(JSON.stringify({}), { status: 200, headers });
-      const data = parseTasksMd(file.content);
-      return new Response(JSON.stringify(data), {
+      return new Response(file.content, {
         status: 200,
         headers: { ...headers, 'Cache-Control': 's-maxage=30' },
       });
@@ -140,14 +72,15 @@ export default async function handler(req: Request) {
     if (req.method === 'POST') {
       const newData = await req.json();
       const file = await getFile(token);
-      const md = toTasksMd(newData);
-      const ok = await putFile(token, md, file?.sha);
-      if (!ok) throw new Error('Failed to write TASKS.md');
+      const json = JSON.stringify(newData, null, 2);
+      const ok = await putFile(token, json, file?.sha);
+      if (!ok) throw new Error('Failed to write memos.json');
       return new Response(JSON.stringify({ ok: true }), { status: 200, headers });
     }
 
     return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers });
-  } catch (e: any) {
-    return new Response(JSON.stringify({ error: e.message }), { status: 500, headers });
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : 'Unknown error';
+    return new Response(JSON.stringify({ error: message }), { status: 500, headers });
   }
 }
