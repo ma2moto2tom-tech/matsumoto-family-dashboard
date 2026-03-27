@@ -11,7 +11,7 @@
 - [ ] Google AdSense 税務情報の更新 — 支払い保留中
 - [x] AIミーティング（20時）
 - [x] 望月さん・石川さんzoom（21時）
-- [ ] Travel Hokkaidoアップデート
+- [x] Travel Hokkaidoアップデート
 
 ### 目標
 - [x] 国民健康保険の加入手続き完了
