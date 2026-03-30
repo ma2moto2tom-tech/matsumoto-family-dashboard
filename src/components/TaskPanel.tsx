@@ -68,8 +68,8 @@ export default function TaskPanel() {
   const [syncing, setSyncing] = useState(false);
   const [lastSync, setLastSync] = useState<string>('');
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
-  const syncTimer = useRef<ReturnType<typeof setInterval>>();
-  const saveTimeout = useRef<ReturnType<typeof setTimeout>>();
+  const syncTimer = useRef<ReturnType<typeof setInterval>>(undefined);
+  const saveTimeout = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   // Fetch tasks from API
   const fetchTasks = useCallback(async () => {
