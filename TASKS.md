@@ -5,7 +5,7 @@
 - [ ] クラウドサイン署名（内定承諾）— 今日〜明日届く
 - [ ] 入社前キャッチアップ開始（業務委託契約締結後）
 - [x] 失業保険の手続き（離職票待ち） <!-- done:2026-03-30 -->
-- [ ] AIツール学習（Claude Code, Antigravity, Seedance, LOVART等）
+- [x] AIツール学習（Claude Code, Antigravity, Seedance, LOVART等） <!-- done:2026-03-30 -->
 - [x] WeWork最終面接結果 → 不採用 <!-- done:2026-03-25 -->
 - [x] SHIFT AI内定獲得・オファー面談日程確定 <!-- done:2026-03-26 -->
 - [x] SHIFT AI木内社長面談 <!-- done:2026-03-17 -->
