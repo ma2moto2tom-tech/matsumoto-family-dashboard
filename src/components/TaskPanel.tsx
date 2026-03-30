@@ -1,349 +1,404 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 
-interface TaskItem {
+interface Task {
   id: string;
   text: string;
   done: boolean;
+  category: string;
+  dueDate: string | null;
+  doneDate: string | null;
 }
 
-interface DayData {
-  tasks: TaskItem[];
-  goals: { text: string; done: boolean }[];
+interface ApiResponse {
+  categories: string[];
+  tasks: Task[];
 }
 
-type TaskData = Record<string, DayData>;
+const TODAY = new Date().toISOString().split('T')[0];
 
-function dateKey(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
+const isToday = (dateStr: string | null): boolean => {
+  if (!dateStr) return false;
+  return dateStr === TODAY;
+};
 
-function shiftDate(key: string, days: number): string {
-  const d = new Date(key + 'T00:00:00');
-  d.setDate(d.getDate() + days);
-  return dateKey(d);
-}
+const isOverdue = (dateStr: string | null): boolean => {
+  if (!dateStr) return false;
+  return dateStr < TODAY;
+};
 
-function formatDateLabel(key: string): string {
-  const [, m, d] = key.split('-');
-  const date = new Date(key + 'T00:00:00');
-  const weekdays = ['日', '月', '火', '水', '木', '金', '土'];
-  return `${parseInt(m)}/${parseInt(d)}（${weekdays[date.getDay()]}）`;
-}
+const formatDate = (dateStr: string | null): string => {
+  if (!dateStr) return '';
+  const [, m, d] = dateStr.split('-');
+  return `${parseInt(m)}/${parseInt(d)}`;
+};
+
+const sortTasks = (tasks: Task[]): Task[] => {
+  return [...tasks].sort((a, b) => {
+    // Overdue first
+    const aOverdue = isOverdue(a.dueDate) ? 0 : 1;
+    const bOverdue = isOverdue(b.dueDate) ? 0 : 1;
+    if (aOverdue !== bOverdue) return aOverdue - bOverdue;
+
+    // Then today
+    const aToday = isToday(a.dueDate) ? 0 : 1;
+    const bToday = isToday(b.dueDate) ? 0 : 1;
+    if (aToday !== bToday) return aToday - bToday;
+
+    // Then by due date
+    if (a.dueDate && b.dueDate) {
+      return a.dueDate.localeCompare(b.dueDate);
+    }
+    if (a.dueDate) return -1;
+    if (b.dueDate) return 1;
+
+    // Then by creation order (id)
+    return a.id.localeCompare(b.id);
+  });
+};
 
 export default function TaskPanel() {
-  const todayKey = dateKey(new Date());
-  const [selectedDate, setSelectedDate] = useState(todayKey);
-  const [data, setData] = useState<TaskData>({});
+  const [categories, setCategories] = useState<string[]>([]);
+  const [allTasks, setAllTasks] = useState<Task[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState('すべて');
+  const [showAddForm, setShowAddForm] = useState(false);
   const [newTaskText, setNewTaskText] = useState('');
-  const [showInput, setShowInput] = useState(false);
-  const [showDone, setShowDone] = useState(false);
+  const [newTaskCategory, setNewTaskCategory] = useState('');
+  const [newTaskDueDate, setNewTaskDueDate] = useState('');
+  const [showCompleted, setShowCompleted] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [lastSync, setLastSync] = useState<string>('');
-  const [contextMenu, setContextMenu] = useState<{ taskId: string; x: number; y: number } | null>(null);
-  const [moveDate, setMoveDate] = useState('');
-  const saveTimeout = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const longPressTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const syncTimer = useRef<ReturnType<typeof setInterval>>();
+  const saveTimeout = useRef<ReturnType<typeof setTimeout>>();
 
-  const isToday = selectedDate === todayKey;
+  // Fetch tasks from API
+  const fetchTasks = useCallback(async () => {
+    try {
+      const res = await fetch('/api/tasks');
+      if (!res.ok) throw new Error('API error');
+      const data: ApiResponse = await res.json();
+      setCategories(data.categories);
+      setAllTasks(data.tasks);
+      setLastSync(new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }));
 
-  // Load from GitHub TASKS.md
-  useEffect(() => {
-    fetch('/api/tasks')
-      .then(r => r.json())
-      .then((remote: TaskData) => {
-        if (Object.keys(remote).length > 0) {
-          setData(remote);
-          setLastSync(new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }));
-        } else {
-          fetch('/data/briefing.json')
-            .then(r => r.json())
-            .then(briefing => {
-              const initial: TaskData = {};
-              initial[todayKey] = {
-                tasks: briefing.tasks || [],
-                goals: briefing.goals || [],
-              };
-              setData(initial);
-              saveToGitHub(initial);
-            })
-            .catch(() => {});
+      // Save to localStorage as backup
+      localStorage.setItem('matsumoto-tasks-backup', JSON.stringify(data));
+    } catch (error) {
+      console.error('Failed to fetch tasks:', error);
+      // Fallback to localStorage
+      try {
+        const backup = localStorage.getItem('matsumoto-tasks-backup');
+        if (backup) {
+          const data: ApiResponse = JSON.parse(backup);
+          setCategories(data.categories);
+          setAllTasks(data.tasks);
         }
-      })
-      .catch(() => {
-        try {
-          const raw = localStorage.getItem('matsumoto-tasks');
-          if (raw) setData(JSON.parse(raw));
-        } catch {}
-      });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Close context menu on outside click
-  useEffect(() => {
-    const handler = () => setContextMenu(null);
-    if (contextMenu) {
-      document.addEventListener('click', handler);
-      return () => document.removeEventListener('click', handler);
+      } catch {}
     }
-  }, [contextMenu]);
-
-  const saveToGitHub = useCallback((updated: TaskData) => {
-    localStorage.setItem('matsumoto-tasks', JSON.stringify(updated));
-    if (saveTimeout.current) clearTimeout(saveTimeout.current);
-    saveTimeout.current = setTimeout(() => {
-      setSyncing(true);
-      fetch('/api/tasks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updated),
-      })
-        .then(() => {
-          setLastSync(new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }));
-        })
-        .catch(() => {})
-        .finally(() => setSyncing(false));
-    }, 1000);
   }, []);
 
-  const dayData = data[selectedDate] || { tasks: [], goals: [] };
-  const tasks = dayData.tasks;
-  const activeTasks = tasks.filter(t => !t.done);
-  const doneTasks = tasks.filter(t => t.done);
-  const doneCount = doneTasks.length;
+  // Initial load
+  useEffect(() => {
+    fetchTasks();
+  }, [fetchTasks]);
 
-  const toggleTask = (id: string) => {
-    const updated = { ...data };
-    const day = { ...(updated[selectedDate] || { tasks: [], goals: [] }) };
-    day.tasks = day.tasks.map(t => t.id === id ? { ...t, done: !t.done } : t);
-    updated[selectedDate] = day;
-    setData(updated);
-    saveToGitHub(updated);
-  };
+  // Auto-refresh every 60 seconds
+  useEffect(() => {
+    syncTimer.current = setInterval(() => {
+      fetchTasks();
+    }, 60000);
+    return () => {
+      if (syncTimer.current) clearInterval(syncTimer.current);
+    };
+  }, [fetchTasks]);
 
-  const addTask = () => {
-    if (!newTaskText.trim()) return;
-    const updated = { ...data };
-    const day = { ...(updated[selectedDate] || { tasks: [], goals: [] }) };
-    day.tasks = [...day.tasks, { id: Math.random().toString(36).slice(2, 10), text: newTaskText.trim(), done: false }];
-    updated[selectedDate] = day;
-    setData(updated);
-    saveToGitHub(updated);
+  const updateTask = useCallback(
+    async (taskId: string, action: 'toggle' | 'delete' | 'update' | 'add', options?: Partial<Task>) => {
+      setSyncing(true);
+
+      // Optimistic update
+      if (action === 'toggle') {
+        setAllTasks(prev => prev.map(t => t.id === taskId ? { ...t, done: !t.done, doneDate: !t.done ? TODAY : null } : t));
+      } else if (action === 'delete') {
+        setAllTasks(prev => prev.filter(t => t.id !== taskId));
+      } else if (action === 'add' && options) {
+        const newTask: Task = {
+          id: Math.random().toString(36).slice(2, 11),
+          text: options.text || '',
+          done: false,
+          category: options.category || '',
+          dueDate: options.dueDate || null,
+          doneDate: null,
+        };
+        setAllTasks(prev => [...prev, newTask]);
+      } else if (action === 'update' && options) {
+        setAllTasks(prev => prev.map(t => t.id === taskId ? { ...t, ...options } : t));
+      }
+
+      // Clear any pending save
+      if (saveTimeout.current) clearTimeout(saveTimeout.current);
+
+      // Debounced API call
+      saveTimeout.current = setTimeout(async () => {
+        try {
+          const res = await fetch('/api/tasks', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: taskId, action, ...options }),
+          });
+          if (!res.ok) throw new Error('API error');
+          setLastSync(new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }));
+        } catch (error) {
+          console.error('Failed to update task:', error);
+          // Revert on failure
+          fetchTasks();
+        } finally {
+          setSyncing(false);
+        }
+      }, 500);
+    },
+    [fetchTasks],
+  );
+
+  // Filtered tasks
+  const filteredTasks = useMemo(() => {
+    if (selectedCategory === 'すべて') {
+      return allTasks.filter(t => !t.done);
+    }
+    return allTasks.filter(t => t.category === selectedCategory && !t.done);
+  }, [allTasks, selectedCategory]);
+
+  const sortedTasks = sortTasks(filteredTasks);
+
+  // Completed tasks
+  const completedTasks = useMemo(() => {
+    if (selectedCategory === 'すべて') {
+      return allTasks.filter(t => t.done);
+    }
+    return allTasks.filter(t => t.category === selectedCategory && t.done);
+  }, [allTasks, selectedCategory]);
+
+  // Due date stats
+  const dueDateStats = useMemo(() => {
+    const active = allTasks.filter(t => !t.done);
+    const today = active.filter(t => isToday(t.dueDate)).length;
+    const overdue = active.filter(t => isOverdue(t.dueDate)).length;
+    return { today, overdue };
+  }, [allTasks]);
+
+  const handleAddTask = () => {
+    if (!newTaskText.trim() || !newTaskCategory.trim()) return;
+    updateTask('', 'add', {
+      text: newTaskText.trim(),
+      category: newTaskCategory,
+      dueDate: newTaskDueDate || null,
+    });
     setNewTaskText('');
-    setShowInput(false);
+    setNewTaskCategory(categories[0] || '');
+    setNewTaskDueDate('');
+    setShowAddForm(false);
   };
 
-  const deleteTask = (id: string) => {
-    const updated = { ...data };
-    const day = { ...(updated[selectedDate] || { tasks: [], goals: [] }) };
-    day.tasks = day.tasks.filter(t => t.id !== id);
-    updated[selectedDate] = day;
-    setData(updated);
-    saveToGitHub(updated);
-  };
-
-  const moveTaskToDate = (taskId: string, targetDate: string) => {
-    if (!targetDate || targetDate === selectedDate) return;
-    const updated = { ...data };
-    const sourceDay = { ...(updated[selectedDate] || { tasks: [], goals: [] }) };
-    const task = sourceDay.tasks.find(t => t.id === taskId);
-    if (!task) return;
-
-    // Remove from source
-    sourceDay.tasks = sourceDay.tasks.filter(t => t.id !== taskId);
-    updated[selectedDate] = sourceDay;
-
-    // Add to target
-    const targetDay = { ...(updated[targetDate] || { tasks: [], goals: [] }) };
-    targetDay.tasks = [...targetDay.tasks, { ...task, done: false }];
-    updated[targetDate] = targetDay;
-
-    setData(updated);
-    saveToGitHub(updated);
-    setContextMenu(null);
-    setMoveDate('');
-  };
-
-  const handleContextMenu = (e: React.MouseEvent, taskId: string) => {
-    e.preventDefault();
-    setContextMenu({ taskId, x: e.clientX, y: e.clientY });
-    setMoveDate(shiftDate(selectedDate, 1));
-  };
-
-  const handleTouchStart = (taskId: string) => {
-    longPressTimer.current = setTimeout(() => {
-      setContextMenu({ taskId, x: window.innerWidth / 2 - 100, y: window.innerHeight / 2 - 60 });
-      setMoveDate(shiftDate(selectedDate, 1));
-    }, 600);
-  };
-
-  const handleTouchEnd = () => {
-    if (longPressTimer.current) clearTimeout(longPressTimer.current);
-  };
+  const activeCount = sortedTasks.length;
+  const completedCount = completedTasks.length;
 
   return (
     <div className="card">
-      <div className="flex items-center justify-between mb-3">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
-          <h2 className="text-[15px] font-semibold text-[--fg]">
-            {isToday ? '今日やること' : 'タスク'}
-          </h2>
-          {syncing && (
-            <span className="text-[10px] text-[#007AFF] animate-pulse">同期中...</span>
-          )}
-          {!syncing && lastSync && (
-            <span className="text-[10px] text-[--fg3]">{lastSync}</span>
-          )}
+          <h2 className="text-[15px] font-semibold text-[--fg]">タスク</h2>
+          {syncing && <span className="text-[10px] text-[#007AFF] animate-pulse">同期中...</span>}
+          {!syncing && lastSync && <span className="text-[10px] text-[--fg3]">{lastSync}</span>}
         </div>
         <div className="flex items-center gap-3">
-          {tasks.length > 0 && (
-            <span className="text-[12px] text-[--fg2] tabular-nums">
-              {activeTasks.length}件
-            </span>
-          )}
+          {activeCount > 0 && <span className="text-[12px] text-[--fg2] tabular-nums">{activeCount}件</span>}
           <button
-            onClick={() => setShowInput(!showInput)}
+            onClick={() => setShowAddForm(!showAddForm)}
             className="text-[12px] text-[#007AFF] font-medium hover:text-[#0056b3] transition-colors"
           >
-            {showInput ? 'キャンセル' : '追加'}
+            {showAddForm ? 'キャンセル' : '追加'}
           </button>
         </div>
       </div>
 
-      {/* Date navigation */}
-      <div className="flex items-center justify-between mb-4 bg-[--bg2] rounded-xl px-2 py-1.5">
-        <button
-          onClick={() => setSelectedDate(shiftDate(selectedDate, -1))}
-          className="w-7 h-7 flex items-center justify-center text-[--fg2] hover:text-[--fg] transition-colors rounded-lg hover:bg-[--card]"
-        >
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-            <path d="M10 4L6 8L10 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-        </button>
-        <button
-          onClick={() => setSelectedDate(todayKey)}
-          className={`text-[13px] font-medium px-3 py-1 rounded-lg transition-colors ${
-            isToday ? 'text-[#007AFF]' : 'text-[--fg] hover:bg-[--card]'
-          }`}
-        >
-          {isToday ? '今日' : formatDateLabel(selectedDate)}
-        </button>
-        <button
-          onClick={() => setSelectedDate(shiftDate(selectedDate, 1))}
-          className="w-7 h-7 flex items-center justify-center text-[--fg2] hover:text-[--fg] transition-colors rounded-lg hover:bg-[--card]"
-        >
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-            <path d="M6 4L10 8L6 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-        </button>
-      </div>
-
-      {/* Progress bar */}
-      {tasks.length > 0 && (
-        <div className="h-1 bg-[--bg2] rounded-full mb-4 overflow-hidden">
-          <div
-            className="h-full bg-[#34C759] rounded-full transition-all duration-500"
-            style={{ width: `${(doneCount / tasks.length) * 100}%` }}
-          />
+      {/* Due date banner */}
+      {(dueDateStats.today > 0 || dueDateStats.overdue > 0) && (
+        <div className="mb-3 px-3 py-2 bg-[--bg2] rounded-xl text-[12px] text-[--fg2]">
+          {dueDateStats.overdue > 0 && (
+            <span className="text-[#FF3B30] font-medium">期限切れ {dueDateStats.overdue}件</span>
+          )}
+          {dueDateStats.overdue > 0 && dueDateStats.today > 0 && <span className="mx-2">/</span>}
+          {dueDateStats.today > 0 && (
+            <span className="text-[#007AFF] font-medium">期限: 今日 {dueDateStats.today}件</span>
+          )}
         </div>
       )}
 
-      {/* Add task input */}
-      {showInput && (
-        <div className="flex gap-2 mb-3">
+      {/* Category tabs */}
+      <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
+        {['すべて', ...categories].map(cat => (
+          <button
+            key={cat}
+            onClick={() => setSelectedCategory(cat)}
+            className={`px-3 py-1.5 text-[12px] font-medium rounded-full whitespace-nowrap transition-all ${
+              selectedCategory === cat
+                ? 'bg-[#007AFF] text-white'
+                : 'bg-[--bg2] text-[--fg] hover:bg-[--border]'
+            }`}
+          >
+            {cat}
+          </button>
+        ))}
+      </div>
+
+      {/* Add form */}
+      {showAddForm && (
+        <div className="mb-4 p-3 bg-[--bg2] rounded-xl space-y-3">
           <input
             type="text"
             value={newTaskText}
             onChange={e => setNewTaskText(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && addTask()}
-            placeholder="新しいタスク..."
+            placeholder="タスク名"
             autoFocus
-            className="flex-1 px-3 py-2 text-[14px] bg-[--bg2] rounded-xl border-none outline-none placeholder:text-[--fg3] focus:ring-2 focus:ring-[#007AFF]/20 transition-all text-[--fg]"
+            onKeyDown={e => e.key === 'Enter' && handleAddTask()}
+            className="w-full px-3 py-2 text-[14px] bg-[--bg] rounded-lg border border-[--border] outline-none focus:ring-2 focus:ring-[#007AFF]/20 text-[--fg] placeholder:text-[--fg3] transition-all"
           />
+          <div className="flex gap-2">
+            <select
+              value={newTaskCategory}
+              onChange={e => setNewTaskCategory(e.target.value)}
+              className="flex-1 px-3 py-2 text-[14px] bg-[--bg] rounded-lg border border-[--border] outline-none focus:ring-2 focus:ring-[#007AFF]/20 text-[--fg] transition-all"
+            >
+              <option value="">{categories[0] ? 'カテゴリ選択' : 'カテゴリ作成中...'}</option>
+              {categories.map(cat => (
+                <option key={cat} value={cat}>
+                  {cat}
+                </option>
+              ))}
+            </select>
+            <input
+              type="date"
+              value={newTaskDueDate}
+              onChange={e => setNewTaskDueDate(e.target.value)}
+              className="px-3 py-2 text-[14px] bg-[--bg] rounded-lg border border-[--border] outline-none focus:ring-2 focus:ring-[#007AFF]/20 text-[--fg] transition-all"
+            />
+          </div>
           <button
-            onClick={addTask}
-            disabled={!newTaskText.trim()}
-            className="px-3 py-2 text-[13px] font-medium bg-[#007AFF] text-white rounded-xl hover:bg-[#0056b3] disabled:opacity-30 transition-all"
+            onClick={handleAddTask}
+            disabled={!newTaskText.trim() || !newTaskCategory.trim()}
+            className="w-full px-3 py-2 text-[14px] font-medium bg-[#007AFF] text-white rounded-lg hover:bg-[#0056b3] disabled:opacity-30 disabled:cursor-not-allowed transition-all"
           >
             追加
           </button>
         </div>
       )}
 
-      {/* Active tasks */}
-      <div className="space-y-0.5 max-h-[280px] overflow-y-auto">
-        {activeTasks.length === 0 && !showInput && doneCount === 0 && (
-          <p className="text-[13px] text-[--fg3] text-center py-6">タスクなし</p>
+      {/* Task list */}
+      <div className="max-h-[400px] overflow-y-auto mb-3">
+        {sortedTasks.length === 0 && !showAddForm && completedCount === 0 && (
+          <div className="text-[13px] text-[--fg3] text-center py-8">タスクなし</div>
         )}
-        {activeTasks.length === 0 && doneCount > 0 && (
-          <p className="text-[13px] text-[#34C759] text-center py-4 font-medium">全タスク完了</p>
+
+        {sortedTasks.length === 0 && completedCount > 0 && (
+          <div className="text-[13px] text-[#34C759] text-center py-6 font-medium">全タスク完了</div>
         )}
-        {activeTasks.map(task => (
-          <div
-            key={task.id}
-            className="flex items-start gap-3 py-2.5 px-3 rounded-xl group hover:bg-[--bg2] transition-all"
-            onContextMenu={e => handleContextMenu(e, task.id)}
-            onTouchStart={() => handleTouchStart(task.id)}
-            onTouchEnd={handleTouchEnd}
-            onTouchMove={handleTouchEnd}
-          >
-            <div
-              className="mt-0.5 w-[18px] h-[18px] rounded-full border-2 border-[--fg3] flex-shrink-0 flex items-center justify-center transition-all cursor-pointer hover:border-[#34C759]"
-              onClick={() => toggleTask(task.id)}
-            />
-            <span
-              className="text-[14px] leading-snug flex-1 cursor-pointer text-[--fg]"
-              onClick={() => toggleTask(task.id)}
-            >
-              {task.text}
-            </span>
-            <button
-              onClick={() => deleteTask(task.id)}
-              className="opacity-0 group-hover:opacity-100 text-[--fg3] hover:text-[#FF3B30] transition-all flex-shrink-0 mt-0.5"
-            >
-              <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
-                <path d="M4 4L12 12M12 4L4 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-              </svg>
-            </button>
-          </div>
-        ))}
+
+        <div className="space-y-0.5">
+          {sortedTasks.map(task => {
+            const taskIsToday = isToday(task.dueDate);
+            const taskIsOverdue = isOverdue(task.dueDate);
+            let dueBadgeColor = 'text-[--fg3]';
+            if (taskIsOverdue) dueBadgeColor = 'text-[#FF3B30] font-medium';
+            else if (taskIsToday) dueBadgeColor = 'text-[#007AFF] font-medium';
+
+            return (
+              <div
+                key={task.id}
+                className="flex items-center gap-3 px-3 py-2.5 rounded-xl group hover:bg-[--bg2] transition-all"
+              >
+                <button
+                  onClick={() => updateTask(task.id, 'toggle')}
+                  className="w-5 h-5 rounded-full border-2 border-[--fg3] flex-shrink-0 flex items-center justify-center transition-all hover:border-[#34C759] group-hover:border-[#34C759]"
+                  title="Toggle task"
+                >
+                  <div className="w-2.5 h-2.5 rounded-full" />
+                </button>
+
+                <div className="flex-1 min-w-0">
+                  <p className="text-[14px] leading-snug text-[--fg] break-words">{task.text}</p>
+                  <div className="text-[11px] text-[--fg3] mt-0.5">
+                    <span className="bg-[--bg2] px-2 py-0.5 rounded inline-block">{task.category}</span>
+                  </div>
+                </div>
+
+                {task.dueDate && (
+                  <span className={`text-[12px] whitespace-nowrap flex-shrink-0 ${dueBadgeColor}`}>
+                    {formatDate(task.dueDate)}
+                  </span>
+                )}
+
+                <button
+                  onClick={() => setDeleteConfirm(task.id)}
+                  className="opacity-0 group-hover:opacity-100 w-5 h-5 flex items-center justify-center text-[--fg3] hover:text-[#FF3B30] transition-all flex-shrink-0"
+                  title="Delete task"
+                >
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                    <path d="M4 4L12 12M12 4L4 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                  </svg>
+                </button>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
-      {/* Completed tasks toggle */}
-      {doneCount > 0 && (
-        <div className="mt-3 pt-3 border-t border-[--border]">
+      {/* Completed section */}
+      {completedCount > 0 && (
+        <div className="pt-3 border-t border-[--border]">
           <button
-            onClick={() => setShowDone(!showDone)}
-            className="flex items-center gap-2 text-[12px] text-[--fg2] hover:text-[--fg] transition-colors w-full"
+            onClick={() => setShowCompleted(!showCompleted)}
+            className="flex items-center gap-2 text-[12px] font-medium text-[--fg2] hover:text-[--fg] transition-colors w-full"
           >
             <svg
               width="10" height="10" viewBox="0 0 16 16" fill="none"
-              className={`transition-transform ${showDone ? 'rotate-90' : ''}`}
+              className={`transition-transform ${showCompleted ? 'rotate-90' : ''}`}
             >
-              <path d="M6 4L10 8L6 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M6 4L10 8L6 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
-            <span>完了タスク ({doneCount})</span>
+            <span>完了 ({completedCount})</span>
           </button>
-          {showDone && (
+
+          {showCompleted && (
             <div className="mt-2 space-y-0.5">
-              {doneTasks.map(task => (
+              {completedTasks.map(task => (
                 <div
                   key={task.id}
-                  className="flex items-start gap-3 py-1.5 px-3 rounded-xl group transition-all"
-                  onContextMenu={e => handleContextMenu(e, task.id)}
-                  onTouchStart={() => handleTouchStart(task.id)}
-                  onTouchEnd={handleTouchEnd}
-                  onTouchMove={handleTouchEnd}
+                  className="flex items-center gap-3 px-3 py-2 rounded-xl group hover:bg-[--bg2] transition-all"
                 >
-                  <div
-                    className="mt-0.5 w-[18px] h-[18px] rounded-full border-2 border-[#34C759] bg-[#34C759] flex-shrink-0 flex items-center justify-center cursor-pointer"
-                    onClick={() => toggleTask(task.id)}
+                  <button
+                    onClick={() => updateTask(task.id, 'toggle')}
+                    className="w-5 h-5 rounded-full border-2 border-[#34C759] bg-[#34C759] flex-shrink-0 flex items-center justify-center transition-all"
+                    title="Toggle task"
                   >
                     <svg width="10" height="10" viewBox="0 0 16 16" fill="none">
-                      <path d="M3.5 8.5L6.5 11.5L12.5 5.5" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+                      <path d="M3.5 8.5L6.5 11.5L12.5 5.5" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
+                  </button>
+
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[13px] leading-snug text-[--fg2] line-through break-words">{task.text}</p>
                   </div>
-                  <span className="text-[13px] leading-snug flex-1 text-[--fg2] line-through cursor-pointer" onClick={() => toggleTask(task.id)}>
-                    {task.text}
-                  </span>
+
+                  <button
+                    onClick={() => setDeleteConfirm(task.id)}
+                    className="opacity-0 group-hover:opacity-100 w-5 h-5 flex items-center justify-center text-[--fg3] hover:text-[#FF3B30] transition-all flex-shrink-0"
+                    title="Delete task"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                      <path d="M4 4L12 12M12 4L4 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                    </svg>
+                  </button>
                 </div>
               ))}
             </div>
@@ -351,42 +406,29 @@ export default function TaskPanel() {
         </div>
       )}
 
-      {/* Context menu for moving task */}
-      {contextMenu && (
-        <div
-          className="fixed z-[100] bg-[--card] rounded-xl border border-[--border] shadow-xl p-3 min-w-[200px]"
-          style={{ left: Math.min(contextMenu.x, window.innerWidth - 220), top: Math.min(contextMenu.y, window.innerHeight - 140) }}
-          onClick={e => e.stopPropagation()}
-        >
-          <p className="text-[12px] text-[--fg2] mb-2">タスクを移動</p>
-          <div className="flex gap-1.5 mb-2">
-            <button
-              onClick={() => moveTaskToDate(contextMenu.taskId, shiftDate(selectedDate, 1))}
-              className="flex-1 px-3 py-1.5 text-[12px] font-medium bg-[#007AFF] text-white rounded-lg hover:bg-[#0056b3] transition-colors"
-            >
-              明日
-            </button>
-            <button
-              onClick={() => moveTaskToDate(contextMenu.taskId, shiftDate(selectedDate, 7))}
-              className="flex-1 px-3 py-1.5 text-[12px] font-medium bg-[--bg2] text-[--fg] rounded-lg hover:bg-[--border] transition-colors"
-            >
-              1週間後
-            </button>
-          </div>
-          <div className="flex gap-1.5">
-            <input
-              type="date"
-              value={moveDate}
-              onChange={e => setMoveDate(e.target.value)}
-              className="flex-1 px-2 py-1.5 text-[12px] bg-[--bg2] rounded-lg border-none outline-none text-[--fg]"
-            />
-            <button
-              onClick={() => moveTaskToDate(contextMenu.taskId, moveDate)}
-              disabled={!moveDate}
-              className="px-3 py-1.5 text-[12px] font-medium text-[#007AFF] hover:bg-[--bg2] rounded-lg transition-colors disabled:opacity-30"
-            >
-              移動
-            </button>
+      {/* Delete confirmation modal */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black/30 z-50 backdrop-blur-sm">
+          <div className="bg-[--card] rounded-2xl shadow-xl p-6 max-w-sm mx-4 border border-[--border]">
+            <h3 className="text-[16px] font-semibold text-[--fg] mb-2">タスクを削除</h3>
+            <p className="text-[14px] text-[--fg2] mb-6">このタスクを削除してもよろしいですか？</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeleteConfirm(null)}
+                className="flex-1 px-4 py-2.5 text-[14px] font-medium text-[--fg] bg-[--bg2] rounded-lg hover:bg-[--border] transition-colors"
+              >
+                キャンセル
+              </button>
+              <button
+                onClick={() => {
+                  updateTask(deleteConfirm, 'delete');
+                  setDeleteConfirm(null);
+                }}
+                className="flex-1 px-4 py-2.5 text-[14px] font-medium text-white bg-[#FF3B30] rounded-lg hover:bg-[#cc2f24] transition-colors"
+              >
+                削除
+              </button>
+            </div>
           </div>
         </div>
       )}

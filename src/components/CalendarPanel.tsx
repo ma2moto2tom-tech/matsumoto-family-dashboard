@@ -31,6 +31,12 @@ export default function CalendarPanel() {
   const [schedule, setSchedule] = useState<ScheduleItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showAdd, setShowAdd] = useState(false);
+  const [addTitle, setAddTitle] = useState('');
+  const [addStart, setAddStart] = useState('');
+  const [addEnd, setAddEnd] = useState('');
+  const [addAllDay, setAddAllDay] = useState(false);
+  const [adding, setAdding] = useState(false);
 
   const isToday = selectedDate === todayKey;
 
@@ -83,8 +89,88 @@ export default function CalendarPanel() {
     <div className="card">
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-[15px] font-semibold text-[--fg]">スケジュール</h2>
-        <span className="text-[12px] text-[--fg3]">Google Calendar</span>
+        <div className="flex items-center gap-2">
+          <span className="text-[12px] text-[--fg3]">Google Calendar</span>
+          <button
+            onClick={() => setShowAdd(!showAdd)}
+            className="text-[12px] text-[#007AFF] font-medium hover:text-[#0056b3] transition-colors"
+          >
+            {showAdd ? 'キャンセル' : '追加'}
+          </button>
+        </div>
       </div>
+
+      {/* Add event form */}
+      {showAdd && (
+        <div className="mb-4 p-3 bg-[--bg2] rounded-xl space-y-2">
+          <input
+            type="text"
+            value={addTitle}
+            onChange={e => setAddTitle(e.target.value)}
+            placeholder="予定のタイトル"
+            autoFocus
+            className="w-full px-3 py-2 text-[13px] bg-[--card] rounded-lg border-none outline-none text-[--fg] placeholder:text-[--fg3]"
+          />
+          <label className="flex items-center gap-2 text-[12px] text-[--fg2]">
+            <input
+              type="checkbox"
+              checked={addAllDay}
+              onChange={e => setAddAllDay(e.target.checked)}
+              className="rounded"
+            />
+            終日
+          </label>
+          {!addAllDay && (
+            <div className="flex gap-2">
+              <input
+                type="time"
+                value={addStart}
+                onChange={e => setAddStart(e.target.value)}
+                className="flex-1 px-2 py-1.5 text-[12px] bg-[--card] rounded-lg border-none outline-none text-[--fg]"
+              />
+              <span className="text-[12px] text-[--fg3] self-center">〜</span>
+              <input
+                type="time"
+                value={addEnd}
+                onChange={e => setAddEnd(e.target.value)}
+                className="flex-1 px-2 py-1.5 text-[12px] bg-[--card] rounded-lg border-none outline-none text-[--fg]"
+              />
+            </div>
+          )}
+          <button
+            onClick={async () => {
+              if (!addTitle.trim()) return;
+              setAdding(true);
+              try {
+                const res = await fetch('/api/calendar-add', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    summary: addTitle.trim(),
+                    date: selectedDate,
+                    startTime: addAllDay ? undefined : addStart,
+                    endTime: addAllDay ? undefined : addEnd,
+                    allDay: addAllDay,
+                  }),
+                });
+                if (res.ok) {
+                  setAddTitle('');
+                  setAddStart('');
+                  setAddEnd('');
+                  setAddAllDay(false);
+                  setShowAdd(false);
+                  fetchEvents(selectedDate);
+                }
+              } catch {}
+              setAdding(false);
+            }}
+            disabled={!addTitle.trim() || adding}
+            className="w-full px-3 py-2 text-[13px] font-medium bg-[#007AFF] text-white rounded-lg hover:bg-[#0056b3] disabled:opacity-40 transition-all"
+          >
+            {adding ? '追加中...' : 'カレンダーに追加'}
+          </button>
+        </div>
+      )}
 
       {/* Date navigation */}
       <div className="flex items-center justify-between mb-4 bg-[--bg2] rounded-xl px-2 py-1.5">
